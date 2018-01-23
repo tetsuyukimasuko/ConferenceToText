@@ -1,7 +1,7 @@
 
-#google speech apiでやるぞお！
-#コードはhttps://qiita.com/clock/items/cb0cfce139af747a3c9fを参照
-#API利用に関してはhttps://qiita.com/lethe2211/items/7c9b1b82c7eda40dafa9を参照
+#参照:
+#https://qiita.com/clock/items/cb0cfce139af747a3c9f
+#https://qiita.com/lethe2211/items/7c9b1b82c7eda40dafa9
 #https://qiita.com/sayonari/items/a70118a468483967ad34
 #https://cloud.google.com/speech/docs/streaming-recognize?hl=ja#speech-streaming-recognize-csharp
 
@@ -31,7 +31,7 @@ Thread_Stop=False
 #テキスト化マルチスレッド処理の個数
 divide_count=4
 
-
+#エンコーディングの指定
 def check_encoding(binary):
     detector=UniversalDetector()
     detector.feed(binary)
@@ -56,8 +56,7 @@ def ConvertToDB(array):
 
     return dB
 
-
-
+#発話区間認識+録音+途中経過をshelveで保存
 def VoiceDetection(device,user_name):
     CHUNK = 2048
     FORMAT = pyaudio.paInt16
@@ -159,11 +158,12 @@ def VoiceDetection(device,user_name):
 
         shelf_file.close()
 
-
+#Googleに繋いでテキスト化
+#.jsonはサービスアカウントのものを使用
 def SpeechToText(spoken_time,audio_data,total,filename,speaker):
     i=0
     k=0
-    with open(r"My First Project-63da92b78953.json", "r") as f:
+    with open(r"XXXXX.json", "r") as f:
         credentials_json = f.read()
     r=sr.Recognizer()
     fp=open(filename,'w')
@@ -187,7 +187,7 @@ def SpeechToText(spoken_time,audio_data,total,filename,speaker):
     sys.stdout.flush()
     fp.close()
 
-
+#リストを特定の数で分割して返す
 def list_no_list(lst,num):
     count=len(lst)
     list_no_list1=[]
@@ -205,8 +205,8 @@ def list_no_list(lst,num):
 
     return list_no_list1
 
+#csvをマージして、dataframeにした後、時間で並び替えて、CSV吐き出し。
 def MergeCSV(filelist,output):
-    #csvをマージして、dataframeにした後、時間で並び替えて、CSV吐き出し。
     list = []
 
     for f in filelist:
@@ -215,6 +215,7 @@ def MergeCSV(filelist,output):
     df=df.sort_values(by=["time"], ascending=True)
     df.to_csv(output,index=False)
 
+#ShelveをCSVに変換
 def ShelveToCSV(filename,csvfilename):
     global divide_count
     shelf_file=shelve.open(filename)
@@ -266,7 +267,7 @@ def ShelveToCSV(filename,csvfilename):
     sys.stdout.flush()
     fp.close()
     
-    
+#めいん    
 if __name__ == '__main__':
     
     names=[]
