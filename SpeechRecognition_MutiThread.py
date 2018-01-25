@@ -1,7 +1,5 @@
-
-#参照:
-#https://qiita.com/clock/items/cb0cfce139af747a3c9f
-#https://qiita.com/lethe2211/items/7c9b1b82c7eda40dafa9
+#コードはhttps://qiita.com/clock/items/cb0cfce139af747a3c9fを参照
+#API利用に関してはhttps://qiita.com/lethe2211/items/7c9b1b82c7eda40dafa9を参照
 #https://qiita.com/sayonari/items/a70118a468483967ad34
 #https://cloud.google.com/speech/docs/streaming-recognize?hl=ja#speech-streaming-recognize-csharp
 
@@ -19,11 +17,14 @@ import numpy as np
 import sys
 import threading
 import pandas as pd
+import os
+import shutil
 
 #以下、調整可能な変数
 
 #発話区間認識の閾値
-DETECT_VOLUME=-40.0 #[dB]
+DETECT_VOLUME=-70.0 #[dB]
+#これはマイク性能でかなり変わる。事前に調整が必要。
 
 #スレッド終了処理
 Thread_Stop=False
@@ -31,14 +32,13 @@ Thread_Stop=False
 #テキスト化マルチスレッド処理の個数
 divide_count=4
 
-#エンコーディングの指定
 def check_encoding(binary):
     detector=UniversalDetector()
     detector.feed(binary)
     detector.close()
     return detector.result['encoding']
 
-#指定したCHANK分のnp.arrayの実行値をとってデシベルにして返す
+#指定したCHUNK分のnp.arrayの実行値をとってデシベルにして返す
 #https://oshiete.goo.ne.jp/qa/5103185.html
 #https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q1050536775
 def ConvertToDB(array):
@@ -56,7 +56,6 @@ def ConvertToDB(array):
 
     return dB
 
-#発話区間認識+録音+途中経過をshelveで保存
 def VoiceDetection(device,user_name):
     CHUNK = 2048
     FORMAT = pyaudio.paInt16
@@ -92,25 +91,26 @@ def VoiceDetection(device,user_name):
             
             #デシベル変換
             dB=ConvertToDB(tmp_data)
-            #print(dB)
 
-            '''
-            #絶対値をとる
-            transfer_data=list(map(lambda x:np.abs(x),tmp_data))
-        
-            #平均値計算
-            avg=np.average(transfer_data)
-            '''
+            sys.stdout.write("\r%f"% dB)
+            sys.stdout.flush()
 
             #平均値が閾値以上であれば、Stream_writeをTrueにする。かつ、無音カウンターを0にする。
             #閾値以下で、かつStream_writeが既にTrueだったら、カウンターを1つ足す。
             #カウンターが10つたまったら、Stream_endをTrueにする
+            #ただし、発話途中で一時的に音量が下がっているだけだったら、無音カウンターは0に戻す。
+            #このときの閾値はDETECT_VOLUME-5[dB]とする。
+
             if dB>DETECT_VOLUME:
                 Stream_write=True
                 silent_sounter=0
             else:
                 if Stream_write:
-                    silent_sounter+=1
+                    if dB>DETECT_VOLUME-5:
+                        silent_sounter=0
+                    else:
+                        silent_sounter+=1
+
                     if silent_sounter>10:
                         Stream_end=True
 
@@ -142,7 +142,7 @@ def VoiceDetection(device,user_name):
         audio=sr.AudioData(tmp,RATE,2)
     
         #保存用shelfをつくる
-        shelf_file=shelve.open(user_name)
+        shelf_file=shelve.open(user_name+"/"+user_name)
         try:
             tmp=list(shelf_file['audio_data'])
             tmp.append(audio)
@@ -158,12 +158,10 @@ def VoiceDetection(device,user_name):
 
         shelf_file.close()
 
-#Googleに繋いでテキスト化
-#.jsonはサービスアカウントのものを使用
 def SpeechToText(spoken_time,audio_data,total,filename,speaker):
     i=0
     k=0
-    with open(r"XXXXX.json", "r") as f:
+    with open(r"My First Project-63da92b78953.json", "r") as f:
         credentials_json = f.read()
     r=sr.Recognizer()
     fp=open(filename,'w')
@@ -187,7 +185,6 @@ def SpeechToText(spoken_time,audio_data,total,filename,speaker):
     sys.stdout.flush()
     fp.close()
 
-#リストを特定の数で分割して返す
 def list_no_list(lst,num):
     count=len(lst)
     list_no_list1=[]
@@ -205,8 +202,8 @@ def list_no_list(lst,num):
 
     return list_no_list1
 
-#csvをマージして、dataframeにした後、時間で並び替えて、CSV吐き出し。
 def MergeCSV(filelist,output):
+    #csvをマージして、dataframeにした後、時間で並び替えて、CSV吐き出し。
     list = []
 
     for f in filelist:
@@ -215,15 +212,15 @@ def MergeCSV(filelist,output):
     df=df.sort_values(by=["time"], ascending=True)
     df.to_csv(output,index=False)
 
-#ShelveをCSVに変換
 def ShelveToCSV(filename,csvfilename):
     global divide_count
-    shelf_file=shelve.open(filename)
+    cwd=filename+"/"
+    shelf_file=shelve.open(cwd+filename)
     audio_data=list(shelf_file['audio_data'])
     spoken_time=list(shelf_file['spoken_time'])
     shelf_file.close()
     r = sr.Recognizer()
-    fp=open(csvfilename,'w')
+    fp=open(cwd+csvfilename,'w')
     total=len(audio_data)
     i=0
     k=0
@@ -248,7 +245,7 @@ def ShelveToCSV(filename,csvfilename):
     time_list=list_no_list(spoken_time,divide_count)
     file_list=[]
     for i in range(divide_count):
-        title='subrutin'+str(i)+'.csv'
+        title=cwd+'subrutin'+str(i)+'.csv'
         file_list.append(title)
 
     threads=[]
@@ -261,13 +258,12 @@ def ShelveToCSV(filename,csvfilename):
         thread.join()
 
     #マージ処理
-    MergeCSV(file_list,csvfilename)
+    MergeCSV(file_list,cwd+csvfilename)
     string='Converting '+filename+space+'|====================| CSV Saved.\n'
     sys.stdout.write('\r' + string)
     sys.stdout.flush()
     fp.close()
-    
-#めいん    
+       
 if __name__ == '__main__':
     
     names=[]
@@ -295,6 +291,16 @@ if __name__ == '__main__':
 
         print("Select mic index---",end='')
         mics.append(int(input()))
+
+        if not os.path.exists(names[i]):
+            os.makedirs(names[i])
+        else:
+            #前回の内容を削除するかどうか聞く。
+            print('Data of',names[i],'already exists. Allow overwrite? [y/n]---',end='')
+            res=input()
+            if res=="y":
+                shutil.rmtree(names[i])
+                os.makedirs(names[i])
 
     print('------------------------------')
 
@@ -325,7 +331,7 @@ if __name__ == '__main__':
             ShelveToCSV(name,name+'.csv')
         #マージ処理
         for i in range(len(names)):
-            names[i]=names[i]+'.csv'
+            names[i]=names[i]+"/"+names[i]+'.csv'
         MergeCSV(names,'result.csv')
         print()
         print('Completed!')
